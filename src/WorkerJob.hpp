@@ -3,8 +3,8 @@
 
 #include <mpi.h>
 #include "Matrix.hpp"
-#include "CommandException.h"
-#include "utility.h"
+#include "Exception.hpp"
+#include "utility.hpp"
 
 enum MESSAGE_TYPE
 {
@@ -21,12 +21,32 @@ enum MESSAGE_TYPE
 };
 
 
-class Worker
+
+int boolToInt(bool* array, int size)
+{
+    int res = 0;
+    for (int i = 0; i < size; ++i)
+    {
+        res |= array[i] << (size - 1 - i);
+        cout << res << "\n";
+    }
+    return res;
+}
+
+void intToBool(int n, bool* res, int size) {
+    for (int i = size - 1; i >= 0; --i) {
+        res[i] = n & 1;
+        n >>= 1;
+    }
+}
+
+
+class WorkerJob
 {
     
 public:
     
-    void worker_function(int rank, int comm_size);
+    void operator () (int rank, int comm_size);
     
     Worker();
     
@@ -36,29 +56,29 @@ private:
     
     int workersCount;
     
-    Field* _grid;
+    Matrix* _grid;
     
-    Field* _previousStepGrid;
+    Matrix* _previousStepGrid;
     
     bool* field_buffer;
     
-    int field_height;
+    int gridHeight;
     
-    int field_width;
+    int gridWidth;
     
     int iterations_todo;
     
     int iterations_ready;
     
-    bool init_stop;
+    bool initStop;
     
-    bool after_stop;
+    bool afterStop;
     
-    bool received_stop;
+    bool receivedStop;
     
     MPI_Request stop_request;
     
-    int count_live_neighbors(int x, int y);
+    int calculateNextStep(int x, int y);
     
     void perform_field(bool* received_low_row, bool* received_high_row);
     
@@ -68,11 +88,11 @@ private:
 
 Worker::Worker ()
 {
-    _grid = new Field;
-    _previousStepGrid = new Field;
-    init_stop = false;
-    after_stop = true;
-    received_stop = false;
+    _grid = new Matrix;
+    _previousStepGrid = new Matrix;
+    initStop = false;
+    afterStop = true;
+    receivedStop = false;
 }
 
 void Worker::worker_function (int rank, int comm_size)
@@ -84,21 +104,21 @@ void Worker::worker_function (int rank, int comm_size)
     int worker_arg[2];
     MPI_Status status;
     MPI_Recv(worker_arg, 2, MPI::INT, 0, FIELD_INFO, MPI_COMM_WORLD, &status);
-    field_width = worker_arg[0];
-    field_height = worker_arg[1];
-    field_buffer = new bool[field_height * (field_width + 2)];
+    gridWidth = worker_arg[0];
+    gridHeight = worker_arg[1];
+    field_buffer = new bool[gridHeight * (gridWidth + 2)];
     
-    MPI_Recv(field_buffer + field_height, field_height * field_width, MPI::BOOL, 0, FIELD_INIT, MPI_COMM_WORLD, &status);
+    MPI_Recv(field_buffer + gridHeight, gridHeight * gridWidth, MPI::BOOL, 0, FIELD_INIT, MPI_COMM_WORLD, &status);
     
-    _grid->init_from_buffer(field_buffer, field_width + 2, field_height);
-    _previousStepGrid->init_from_buffer(field_buffer, field_width + 2, field_height);
+    _grid->init_from_buffer(field_buffer, gridWidth + 2, gridHeight);
+    _previousStepGrid->init_from_buffer(field_buffer, gridWidth + 2, gridHeight);
     
     int lower_worker_id = (rank == 1) ? (comm_size - 1) : (rank - 1);
     int higher_worker_id = (rank == comm_size - 1) ? 1 : (rank + 1);
-    bool* lower_row_send = new bool[field_height];
-    bool* higher_row_send = new bool[field_height];
-    bool* lower_row_receive = new bool[field_height];
-    bool* higher_row_receive = new bool[field_height];
+    bool* lower_row_send = new bool[gridHeight];
+    bool* higher_row_send = new bool[gridHeight];
+    bool* lower_row_receive = new bool[gridHeight];
+    bool* higher_row_receive = new bool[gridHeight];
     
     while (true)
     {
@@ -106,36 +126,36 @@ void Worker::worker_function (int rank, int comm_size)
         if (!curr_status)
             break;
         
-        received_stop = false;
+        receivedStop = false;
         
         _grid->write_row(lower_row_send, 1);
-        MPI_Sendrecv(lower_row_send, field_height, MPI::BOOL, lower_worker_id, ROW_SENDRECV,
-                     higher_row_receive, field_height, MPI::BOOL, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+        MPI_Sendrecv(lower_row_send, gridHeight, MPI::BOOL, lower_worker_id, ROW_SENDRECV,
+                     higher_row_receive, gridHeight, MPI::BOOL, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
         
         if (status.MPI_TAG == STOP)
         {
-            received_stop = true;
-            int max_iteration = int_from_boolarray(higher_row_receive, field_height);
+            receivedStop = true;
+            int max_iteration = boolToInt(higher_row_receive, gridHeight);
             iterations_todo = max_iteration - iterations_ready;
-            MPI_Recv(higher_row_receive, field_height, MPI::BOOL, higher_worker_id, ROW_SENDRECV,
+            MPI_Recv(higher_row_receive, gridHeight, MPI::BOOL, higher_worker_id, ROW_SENDRECV,
                      MPI_COMM_WORLD, &status);
-
+            
         }
         
-        _grid->write_row(higher_row_send, field_width + 1);
-        MPI_Sendrecv( higher_row_send, field_height, MPI::BOOL, higher_worker_id, ROW_SENDRECV,
-                      lower_row_receive, field_height, MPI::BOOL, MPI_ANY_SOURCE, MPI_ANY_TAG,
-                      MPI_COMM_WORLD, &status );
+        _grid->write_row(higher_row_send, gridWidth + 1);
+        MPI_Sendrecv( higher_row_send, gridHeight, MPI::BOOL, higher_worker_id, ROW_SENDRECV,
+                     lower_row_receive, gridHeight, MPI::BOOL, MPI_ANY_SOURCE, MPI_ANY_TAG,
+                     MPI_COMM_WORLD, &status );
         
         if (status.MPI_TAG == STOP)
         {
-            received_stop = true;
-            int max_iteration = int_from_boolarray(lower_row_receive, field_height);
+            receivedStop = true;
+            int max_iteration = boolToInt(lower_row_receive, gridHeight);
             iterations_todo = max_iteration - iterations_ready;
-            MPI_Recv(lower_row_receive, field_height, MPI::BOOL, lower_worker_id, ROW_SENDRECV,
+            MPI_Recv(lower_row_receive, gridHeight, MPI::BOOL, lower_worker_id, ROW_SENDRECV,
                      MPI_COMM_WORLD, &status);
         }
-    
+        
         perform_field(lower_row_receive, higher_row_receive);
         iterations_todo--;
         iterations_ready++;
@@ -163,44 +183,44 @@ bool Worker::check_break_work ()
         {
             case RUN:
                 iterations_todo += message;
-                after_stop = true;
+                afterStop = true;
                 return true;
             case FINISH:
                 return false;
             case FIELD_GATHER:
-                _grid->write_to_buffer(field_buffer, 0, field_width);
-                MPI_Send(field_buffer, field_width * field_height, MPI::BOOL, 0, FIELD_GATHER, MPI_COMM_WORLD);
+                _grid->write_to_buffer(field_buffer, 0, gridWidth);
+                MPI_Send(field_buffer, gridWidth * gridHeight, MPI::BOOL, 0, FIELD_GATHER, MPI_COMM_WORLD);
                 break;
             case STOP:
                 break;
         }
     }
     
-    if (id == 1 && after_stop)
+    if (id == 1 && afterStop)
     {
-        if (!init_stop)
+        if (!initStop)
         {
             MPI_Irecv(&message, 1, MPI::INT, 0, STOP, MPI_COMM_WORLD, &stop_request);
-            init_stop = true;
+            initStop = true;
         }
         MPI_Test(&stop_request, &flag, &status);
         if (flag)
         {
-            init_stop = false;
+            initStop = false;
             if (iterations_todo > 0)
             {
                 return true;
             }
             for (int i = 2; i <= workersCount; ++i)
             {
-                bool* iteration_buffer = new bool[field_height];
+                bool* iteration_buffer = new bool[gridHeight];
                 int max_iteration = iterations_ready + iterations_todo;
-                boolarray_from_int(max_iteration, iteration_buffer, field_height);
-                MPI_Send(iteration_buffer, field_height, MPI::BOOL, i, STOP, MPI_COMM_WORLD);
+                intToBool(max_iteration, iteration_buffer, gridHeight);
+                MPI_Send(iteration_buffer, gridHeight, MPI::BOOL, i, STOP, MPI_COMM_WORLD);
             }
             return true;
         }
-        after_stop = false;
+        afterStop = false;
         flag = false;
     }
     
@@ -209,10 +229,10 @@ bool Worker::check_break_work ()
 
 void Worker::perform_field(bool* received_low_row, bool* received_high_row)
 {
-    for (int i = 0; i < field_height; ++i)
+    for (int i = 0; i < gridHeight; ++i)
     {
         _grid->data[0][i] = received_low_row[i];
-        _grid->data[field_width - 1][i] = received_high_row[i];
+        _grid->data[gridWidth - 1][i] = received_high_row[i];
     }
     int p, live_nbs;
     
@@ -221,7 +241,7 @@ void Worker::perform_field(bool* received_low_row, bool* received_high_row)
         for (int j = 0; j < _grid->height; ++j)
         {
             p = _previousStepGrid->data[i][j];
-            live_nbs = count_live_neighbors(i, j);
+            live_nbs = calculateNextStep(i, j);
             if (p == 1)
             {
                 if (live_nbs < 2 || live_nbs > 3)
@@ -241,7 +261,7 @@ void Worker::perform_field(bool* received_low_row, bool* received_high_row)
     std::swap(_grid, _previousStepGrid);
 }
 
-int Worker::count_live_neighbors(int x, int y)
+int Worker::calculateNextStep(int x, int y)
 {
     unsigned int count = 0;
     for (int i = x - 1; i <= x+1; ++i)
@@ -252,7 +272,7 @@ int Worker::count_live_neighbors(int x, int y)
             {
                 continue;
             }
-            if (_previousStepGrid->data[i][(j + field_height) % field_height])
+            if (_previousStepGrid->data[i][(j + gridHeight) % gridHeight])
             {
                 count++;
             }

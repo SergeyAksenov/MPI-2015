@@ -1,65 +1,105 @@
-#ifndef MPILIFESOLVER_H
-#define MPILIFESOLVER_H
+#ifndef MasterJob_H
+#define MasterJob_H
 
-#include "LifeSolver.h"
+//#include "LifeSolver.h"
 #include "Matrix.hpp"
 #include "Master.hpp"
 #include "Command.hpp"
 
 using namespace std;
 
-class MPILifeSolver: public LifeSolver
+class Job
+{
+    
+public:
+    
+    
+    std::map<std::string, Command*> commands;
+    
+    
+    void run() {
+        
+        while (true) {
+            cout << "> ";
+            
+            string cmd;
+            
+            cin >> cmd;
+            if (commands[cmd]) {
+                commands[cmd]->handle(life_field);
+            }
+            else {
+                cout << "Unknown command\n";
+            }
+        }
+        
+    }
+    
+    
+private:
+    
+    
+    Matrix* life_field;
+    
+    
+};
+
+
+
+
+
+class MasterJob: public Job
 {
     
     Master* master;
     
 public:
     
-    MPILifeSolver();
+    MasterJob();
     
-    ~MPILifeSolver();
+    ~MasterJob();
     
     void run(int size);
     
 };
 
-MPILifeSolver::MPILifeSolver()
+MasterJob::MasterJob()
 {
-    handlers["START"] = new StartHandler();
+    commands["START"] = new StartCommand();
     
-    handlers["STATUS"] = new StatusHandler();
+    commands["STATUS"] = new StatusCommand();
     
-    handlers["RUN"] = new RunHandler();
+    commands["RUN"] = new RunCommand();
     
-    handlers["STOP"] = new StopHandler();
+    commands["STOP"] = new StopCommand();
     
-    handlers["QUIT"] = new QuitHandler();
+    commands["EXIT"] = new ExitCommand();
     
 }
 
-void MPILifeSolver::run(int size)
+void MasterJob::run(int size)
 {
     master = new Master();
     master->set_workers_count(size - 1);
     while (true)
     {
-        cout << "$ ";
-        string command;
-        cin >> command;
-        if (handlers[command])
+        cout << "> ";
+        string cmd;
+        cin >> cmd;
+        if (commands[cmd])
         {
-            handlers[command]->handle(master);
+            commands[cmd]->handle(master);
         }
         else
         {
-            cout << "Wrong command\n";
+            cout << "Unknown command\n";
         }
     }
 }
 
-MPILifeSolver::~MPILifeSolver()
+MasterJob::~MasterJob()
 {
-    assert(master->get_state() == Master::NOT_STARTED || master->get_state() == Master::FINISHED);
+    assert(master->getState() == Master::NOT_STARTED || master->getState() == Master::FINISHED);
 }
 
 #endif

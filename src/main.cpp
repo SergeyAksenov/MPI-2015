@@ -11,27 +11,25 @@ int main(int argc, char** argv)
 {
     MPI_Status status;
     MPI_Init(&argc, &argv);
-
-    int rank;
+    int id;
     int size;
-
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_rank(MPI_COMM_WORLD, &id);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     
-    if (size < 2)
+    /*if (size < 2)
     {
         throw "Very few workers are available.";
-    }
+    }*/
     
-    if (rank == 0)
+    if (id == 0)
     {
-        MPILifeSolver solver = MPILifeSolver();
-        solver.run(size);
+        MasterJob msj;// = MasterJob();
+        msj.run(size);
     }
     else
     {
-        Worker worker = Worker();
-        worker.worker_function(rank, size);
+        WorkerJob wrj;// = Worker();
+        wrj(id, size);
     }
     
     MPI_Finalize();

@@ -1,5 +1,5 @@
-#ifndef MPIHANDLER_H
-#define MPIHANDLER_H
+#ifndef COMMAND_HPP
+#define COMMAND_HPP
 
 #include <cstdlib>
 #include <iostream>
@@ -10,6 +10,7 @@
 #include <utility>
 #include <cassert>
 #include <mpi.h>
+#include "Master.hpp"
 //#include "Command.hpp"
 
 using namespace std;
@@ -19,7 +20,7 @@ struct Command
 {
     virtual void handle(void* arg) = 0;
     
-    virtual ~Handler() {}
+    virtual ~Command() {}
 };
 
 

@@ -1,14 +1,14 @@
-#ifndef MASTER_H
-#define MASTER_H
+#ifndef MASTER_HPP
+#define MASTER_HPP
 
 #include "WorkerJob.hpp"
-#include "CommandException.hpp"
+#include "Exception.hpp"
 
 class Master
 {
-
+    
 public:
-
+    
     enum StateType
     {
         NOT_STARTED,
@@ -18,16 +18,16 @@ public:
         FINISHED
     };
     
-    Field* life_field;
+    Matrix* grid;
     
 public:
     
     Master() : state(NOT_STARTED)
     {
-        life_field = new Field;
+        grid = new Matrix;
     }
     
-    void init_workers();
+    void initWorkers();
     
     void run_workers(int iterations);
     
@@ -35,19 +35,19 @@ public:
     
     void shutdown();
     
-    void gather_field();
+    void gatherGrid();
     
     void change_state(StateType s);
     
-    StateType get_state();
+    StateType getState();
     
-    int get_iter_number();
+    int getIterNum();
     
-    Field* get_field();
+    Matrix* getGrid();
     
-    void set_workers_count(int workers_count);
+    void setNumWorkers(int workers_count);
     
-    int get_workers_count();
+    int getNumWorkers();
     
 private:
     
@@ -55,7 +55,7 @@ private:
     
     unsigned int workersCount;
     
-    bool* field_buffer;
+    bool* gridBuffer;
     
     int worker_arg[2];
     
@@ -64,21 +64,21 @@ private:
     
 };
 
-void Master::set_workers_count(int workers_count)
+void Master::setNumWorkers(int workers_count)
 {
     workersCount = workers_count;
 }
 
-int Master::get_workers_count()
+int Master::getNumWorkers()
 {
     return workersCount;
 }
 
-void Master::init_workers()
+void Master::initWorkers()
 {
-    field_buffer = new bool[life_field->width * life_field->height];
-    worker_arg[0] = life_field->width / workersCount;
-    worker_arg[1] = life_field->height;
+    gridBuffer = new bool[grid->width * grid->height];
+    worker_arg[0] = grid->width / workersCount;
+    worker_arg[1] = grid->height;
     cout << worker_arg[0] << " " << worker_arg[2] << " " << workersCount << endl;
     int start_row = 0;
     
@@ -86,13 +86,13 @@ void Master::init_workers()
     {
         if (i == workersCount)
         {
-            worker_arg[0] += life_field->width % workersCount;
+            worker_arg[0] += grid->width % workersCount;
         }
-        life_field->write_to_buffer(field_buffer, start_row, worker_arg[0]);
+        grid->write_to_buffer(gridBuffer, start_row, worker_arg[0]);
         
         MPI_Send(worker_arg, 2, MPI::INT, i, FIELD_INFO, MPI_COMM_WORLD);
         
-        MPI_Send(field_buffer, worker_arg[0] * life_field->height, MPI::BOOL,
+        MPI_Send(gridBuffer, worker_arg[0] * grid->height, MPI::BOOL,
                  i, FIELD_INIT, MPI_COMM_WORLD);
         
         cout << "sended info\n";
@@ -100,35 +100,38 @@ void Master::init_workers()
     }
 }
 
-void Master::gather_field()
+
+void Master::gatherGrid()
 {
     MPI_Status status;
-    bool* field_part_pointer = field_buffer;
+    bool* field_part_pointer = gridBuffer;
     bool some_message = 0;
-    worker_arg[0] = life_field->width / workersCount;
-
+    worker_arg[0] = grid->width / workersCount;
+    
     for (int i = workersCount; i >= 1; --i)
     {
         if (i == workersCount)
         {
-            worker_arg[0] += life_field->width % workersCount;
+            worker_arg[0] += grid->width % workersCount;
         }
         
         MPI_Send(&some_message, 1, MPI::INT, i, FIELD_GATHER, MPI_COMM_WORLD);
-        MPI_Recv(field_part_pointer, worker_arg[0] * life_field->height, MPI::BOOL, i, FIELD_GATHER, MPI_COMM_WORLD, &status);
-        field_part_pointer += worker_arg[0] * life_field->height;
+        MPI_Recv(field_part_pointer, worker_arg[0] * grid->height, MPI::BOOL, i, FIELD_GATHER, MPI_COMM_WORLD, &status);
+        field_part_pointer += worker_arg[0] * grid->height;
     }
-    life_field->init_from_buffer(field_buffer, life_field->width, life_field->height);
+    grid->init_from_buffer(gridBuffer, grid->width, grid->height);
 }
 
-int Master::get_iter_number()
+
+int Master::getIterNum()
 {
     return iterNumber;
 }
 
-Field* Master::get_field()
+
+Matrix* Master::getGrid()
 {
-    return life_field;
+    return grid;
 }
 
 void Master::run_workers(int iterations)
@@ -144,7 +147,7 @@ void Master::change_state(StateType s)
     state = s;
 }
 
-Master::StateType Master::get_state()
+Master::StateType Master::getState()
 {
     return state;
 }

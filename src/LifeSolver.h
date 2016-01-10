@@ -40,7 +40,7 @@ public:
 private:
     
     
-    Field* life_field;
+    Matrix* life_field;
     
     
 };
